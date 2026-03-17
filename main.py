@@ -111,13 +111,13 @@ def scored_to_result(hit: ScoredPoint, collection: str) -> SearchResult:
 
 
 def search_collection(vector: list[float], collection: str, top_k: int) -> list[SearchResult]:
-    hits = qdrant_client.search(
+    response = qdrant_client.query_points(
         collection_name=collection,
-        query_vector=vector,
+        query=vector,
         limit=top_k,
         with_payload=True,
     )
-    return [scored_to_result(h, collection) for h in hits]
+    return [scored_to_result(h, collection) for h in response.points]
 
 
 def merge_and_rank(results_a: list, results_b: list, top_k: int) -> list:

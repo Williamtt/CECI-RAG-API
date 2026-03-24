@@ -126,14 +126,28 @@ def embed_image_bytes_sync(image_bytes: bytes, mime_type: str) -> list[float]:
     return list(response.embeddings[0].values)
 
 
+def _to_str(val) -> str:
+    """確保 payload 欄位是字串（防止 Gemini 生成時回傳 list/dict）"""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, list):
+        return "。".join(
+            item.get("描述", str(item)) if isinstance(item, dict) else str(item)
+            for item in val
+        )
+    if val is None:
+        return ""
+    return str(val)
+
+
 def scored_to_result(hit: ScoredPoint, collection: str) -> SearchResult:
     p = hit.payload or {}
     return SearchResult(
         image_name=p.get("image_name", ""),
-        description=p.get("description", ""),
-        law_ref=p.get("law_ref", ""),
-        場景描述=p.get("場景描述", ""),
-        潛在風險描述=p.get("潛在風險描述", ""),
+        description=_to_str(p.get("description", "")),
+        law_ref=_to_str(p.get("law_ref", "")),
+        場景描述=_to_str(p.get("場景描述", "")),
+        潛在風險描述=_to_str(p.get("潛在風險描述", "")),
         image_path=p.get("image_path", ""),
         score=round(hit.score, 4),
         source_collection=collection,

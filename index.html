@@ -167,7 +167,7 @@
                 :src="'/image/' + r.image_name + '.jpg'"
                 :alt="r.image_name"
                 class="w-full h-52 object-cover card-img"
-                @error="$el.src='/image/' + r.image_name + '.png'"
+                @error="$el.dataset.retry = ($el.dataset.retry||0)*1+1; $el.src = $el.dataset.retry==1 ? '/image/'+r.image_name+'.png' : 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22208%22><rect width=%22400%22 height=%22208%22 fill=%22%23f3f4f6%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2214%22 fill=%22%239ca3af%22>圖片不存在</text></svg>'"
               />
               <!-- Score Badge -->
               <div class="absolute top-2 right-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded-full font-mono">
@@ -257,7 +257,7 @@
           <img
             :src="'/image/' + modalItem.image_name + '.jpg'"
             class="w-full object-contain max-h-96"
-            @error="$el.src='/image/' + modalItem.image_name + '.png'"
+            @error="$el.dataset.retry = ($el.dataset.retry||0)*1+1; $el.src = $el.dataset.retry==1 ? '/image/'+modalItem.image_name+'.png' : 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22300%22><rect width=%22600%22 height=%22300%22 fill=%22%23f3f4f6%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2216%22 fill=%22%239ca3af%22>圖片不存在</text></svg>'"
           />
           <div class="p-5 space-y-4">
             <div>

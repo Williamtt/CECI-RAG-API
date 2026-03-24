@@ -5,16 +5,20 @@ CECI 工安缺失案例庫 - RAG Query API
 
 import os
 import re
+import json
 import base64
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from google import genai
 from google.genai import types
+from google.cloud import storage
+from google.oauth2 import service_account
 from qdrant_client import QdrantClient
 from qdrant_client.models import ScoredPoint
 
@@ -24,6 +28,8 @@ log = logging.getLogger("uvicorn.error")
 GEMINI_API_KEY   = os.environ["GEMINI_API_KEY"]
 QDRANT_URL       = os.environ["QDRANT_URL"]
 QDRANT_API_KEY   = os.environ["QDRANT_API_KEY"]
+GCS_KEY_JSON     = os.environ.get("GCS_KEY_JSON")   # Railway 上存放 JSON 字串
+GCS_BUCKET_NAME  = os.environ.get("GCS_BUCKET_NAME", "ceci-safety-images")
 EMBED_MODEL      = "gemini-embedding-2-preview"
 VLM_MODEL        = "gemini-2.5-flash"
 VECTOR_SIZE      = 3072
@@ -42,13 +48,22 @@ RERANK_PROMPT_TMPL = (
 
 gemini_client: genai.Client = None
 qdrant_client: QdrantClient = None
+gcs_bucket = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global gemini_client, qdrant_client
+    global gemini_client, qdrant_client, gcs_bucket
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     qdrant_client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    if GCS_KEY_JSON:
+        key_info = json.loads(GCS_KEY_JSON)
+        creds = service_account.Credentials.from_service_account_info(key_info)
+        gcs_client = storage.Client(credentials=creds, project=key_info["project_id"])
+        gcs_bucket = gcs_client.bucket(GCS_BUCKET_NAME)
+        log.info("GCS client initialized")
+    else:
+        log.warning("GCS_KEY_JSON not set, /image endpoint will be unavailable")
     log.info("Clients initialized")
     yield
     log.info("Shutting down")
@@ -80,6 +95,8 @@ class SearchResult(BaseModel):
     image_name: str
     description: str
     law_ref: str
+    場景描述: str
+    潛在風險描述: str
     image_path: str
     score: float
     source_collection: str
@@ -115,6 +132,8 @@ def scored_to_result(hit: ScoredPoint, collection: str) -> SearchResult:
         image_name=p.get("image_name", ""),
         description=p.get("description", ""),
         law_ref=p.get("law_ref", ""),
+        場景描述=p.get("場景描述", ""),
+        潛在風險描述=p.get("潛在風險描述", ""),
         image_path=p.get("image_path", ""),
         score=round(hit.score, 4),
         source_collection=collection,
@@ -181,6 +200,28 @@ def vlm_rerank(image_bytes: bytes, mime_type: str,
 
 
 # ── Routes ────────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def frontend():
+    """搜尋前端頁面"""
+    html_path = os.path.join(os.path.dirname(__file__), "index.html")
+    with open(html_path, encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/image/{image_name}", include_in_schema=False)
+def get_image(image_name: str):
+    """從 GCS 代理圖片"""
+    if gcs_bucket is None:
+        raise HTTPException(status_code=503, detail="GCS not configured")
+    try:
+        blob = gcs_bucket.blob(image_name)
+        image_bytes = blob.download_as_bytes()
+        mime = "image/png" if image_name.lower().endswith(".png") else "image/jpeg"
+        return Response(content=image_bytes, media_type=mime)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Image not found: {e}")
+
 
 @app.get("/health")
 def health():
@@ -323,6 +364,8 @@ async def search_by_image_rerank(
                     image_name=r.image_name,
                     description=r.description,
                     law_ref=r.law_ref,
+                    場景描述=r.場景描述,
+                    潛在風險描述=r.潛在風險描述,
                     image_path=r.image_path,
                     score=round(1.0 - i * 0.01, 4),
                     source_collection="reranked",
